@@ -13,12 +13,16 @@ struct Args {
     #[arg(short, long, default_value_t = 0.6)]
     threshold: f32,
 
+    /// Reverse display direction of results
+    #[arg(short, long, default_value_t = false)]
+    reverse: bool,
+
     /// File-names must match this pattern
     #[arg(short, long, default_value_t = String::from(".*"))]
     filename_pattern: String,
 }
 
-fn scan_dir(root: &str, pattern: &str) -> Vec<(PathBuf, HashSet<String>)> {
+fn scan_dir(root: &str, pattern: &str) -> Vec<(PathBuf, u64, HashSet<String>)> {
     let filename_regex = regex::Regex::new(pattern).unwrap();
     log::info!("Getting file listing from: {root}");
     walkdir::WalkDir::new(root)
@@ -33,7 +37,7 @@ fn scan_dir(root: &str, pattern: &str) -> Vec<(PathBuf, HashSet<String>)> {
                         .split(|c: char| !c.is_alphanumeric())
                         .map(|v| v.to_lowercase())
                         .collect();
-                    acc.push((entry.path().to_owned(), parts));
+                    acc.push((entry.path().to_owned(), entry.metadata().map(|m| m.len()).unwrap_or_default(), parts));
                 }
             }
             acc
@@ -41,17 +45,17 @@ fn scan_dir(root: &str, pattern: &str) -> Vec<(PathBuf, HashSet<String>)> {
 }
 
 fn calculate_duplicates(
-    entries: &[(PathBuf, HashSet<String>)],
+    entries: &[(PathBuf, u64, HashSet<String>)],
     threshold: f32,
-) -> Vec<(f32, &PathBuf, &PathBuf)> {
+) -> Vec<(f32, &PathBuf, &PathBuf, u64)> {
     log::info!("Generating similarity between {} entries", entries.len());
 
     let mut duplicates = Vec::new();
 
-    for (i, (path_a, words_a)) in entries.iter().enumerate() {
+    for (i, (path_a, size_a, words_a)) in entries.iter().enumerate() {
         let l1_sum = words_a.len();
         for j in 0..i {
-            let (path_b, words_b) = entries.get(j).unwrap();
+            let (path_b, size_b, words_b) = entries.get(j).unwrap();
 
             let ab_words: HashSet<_> = words_a.intersection(words_b).collect();
 
@@ -62,7 +66,7 @@ fn calculate_duplicates(
 
             if cosine > threshold {
                 log::debug!("{path_a:?} {path_b:?} {cosine}");
-                duplicates.push((cosine, path_a, path_b));
+                duplicates.push((cosine, path_a, path_b, size_a + size_b));
             }
         }
     }
@@ -83,11 +87,16 @@ fn main() {
 
     let mut duplicates = calculate_duplicates(&entries, args.threshold);
 
+    duplicates.sort_by_key(|v| v.3);
     duplicates.sort_by_key(|v| (v.0 * 10000.0) as u64);
 
+    if args.reverse {
+        duplicates.reverse();
+    }
+
     log::debug!("{duplicates:#?}");
-    for (score, path_a, path_b) in &duplicates {
-        log::info!("{score} {path_a:?} {path_b:?}");
+    for (score, path_a, path_b, total) in &duplicates {
+        log::info!("{score} {total} {path_a:?} {path_b:?}");
     }
     log::info!("total duplicates: {}", duplicates.len());
 }
