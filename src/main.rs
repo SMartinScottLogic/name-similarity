@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::{collections::HashSet, path::PathBuf};
 
 use clap::Parser;
@@ -17,12 +18,16 @@ struct Args {
     #[arg(short, long, default_value_t = false)]
     reverse: bool,
 
+    /// Length of n-word tuple to use as basis vector components
+    #[arg(short = 'l', long, default_value_t = 2)]
+    trie_len: usize,
+
     /// File-names must match this pattern
     #[arg(short, long, default_value_t = String::from(".*"))]
     filename_pattern: String,
 }
 
-fn scan_dir(root: &str, pattern: &str) -> Vec<(PathBuf, u64, HashSet<String>)> {
+fn scan_dir(root: &str, pattern: &str, trie_len: usize) -> Vec<(PathBuf, u64, HashSet<String>)> {
     let filename_regex = regex::Regex::new(pattern).unwrap();
     log::info!("Getting file listing from: {root}");
     walkdir::WalkDir::new(root)
@@ -31,13 +36,31 @@ fn scan_dir(root: &str, pattern: &str) -> Vec<(PathBuf, u64, HashSet<String>)> {
         .fold(Vec::new(), |mut acc, entry| {
             if let Ok(meta) = entry.metadata() {
                 if meta.is_file() && filename_regex.is_match(&entry.file_name().to_string_lossy()) {
-                    let parts: HashSet<String> = entry
-                        .file_name()
-                        .to_string_lossy()
+                    let i = entry.file_name().to_string_lossy().to_string();
+                    let i = i
                         .split(|c: char| !c.is_alphanumeric())
-                        .map(|v| v.to_lowercase())
-                        .collect();
-                    acc.push((entry.path().to_owned(), entry.metadata().map(|m| m.len()).unwrap_or_default(), parts));
+                        .map(|v| v.to_lowercase());
+                    let parts: HashSet<String> = match trie_len {
+                        1 => i.collect(),
+                        2 => i
+                            .tuple_windows::<(_, _)>()
+                            .map(|(a, b)| a + "." + &b)
+                            .collect(),
+                        3 => i
+                            .tuple_windows::<(_, _, _)>()
+                            .map(|(a, b, c)| a + "." + &b + "." + &c)
+                            .collect(),
+                        4 => i
+                            .tuple_windows::<(_, _, _, _)>()
+                            .map(|(a, b, c, d)| a + "." + &b + "." + &c + "." + &d)
+                            .collect(),
+                        _ => unreachable!(),
+                    };
+                    acc.push((
+                        entry.path().to_owned(),
+                        entry.metadata().map(|m| m.len()).unwrap_or_default(),
+                        parts,
+                    ));
                 }
             }
             acc
@@ -82,7 +105,7 @@ fn main() {
     let entries = args
         .root
         .iter()
-        .flat_map(|r| scan_dir(r, &args.filename_pattern).into_iter())
+        .flat_map(|r| scan_dir(r, &args.filename_pattern, args.trie_len).into_iter())
         .collect::<Vec<_>>();
 
     let mut duplicates = calculate_duplicates(&entries, args.threshold);
