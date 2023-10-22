@@ -11,3 +11,13 @@ walkdir = "2.4.0"
 clap = { version = "4", features = ["derive"] }
 regex = "1.10.2"
 itertools = "0.11.0"
+
+opentelemetry-otlp = { version = "0.13.0", features = ["http-proto", "metrics", "tokio"] }
+opentelemetry = "0.20.0"
+opentelemetry-http = {version = "0.9.0", features = ["reqwest"] }
+tracing-opentelemetry = "0.21.0"
+tracing = { version = "0.1.35", default-features = false, features = ["std", "attributes"] }
+tracing-subscriber = { version = "0.3.0", default-features = false, features = ["registry", "std", "fmt"] }
+reqwest = "0.11.22"
+http = "0.2.9"
+bytes = "1.5.0"
